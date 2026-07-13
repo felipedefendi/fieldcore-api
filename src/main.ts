@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { DecimalToNumberInterceptor } from './common/interceptors/decimal-to-number.interceptor';
 import type { EnvConfig } from './config/env.validation';
 
 async function bootstrap() {
@@ -21,6 +22,7 @@ async function bootstrap() {
   );
 
   app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalInterceptors(new DecimalToNumberInterceptor());
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('FieldCore API')

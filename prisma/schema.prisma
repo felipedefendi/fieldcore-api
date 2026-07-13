@@ -1,6 +1,7 @@
-// Escopo do MVP (ver PLANNING.md, secao 12): Company, User+Role, Customer, Equipment,
-// WorkOrder com state machine basica (sem Technician, Parts, SLA, Comments, Attachments,
-// AuditLog ainda -- entram na versao intermediaria/avancada).
+// Escopo MVP (Company, User+Role, Customer, Equipment, WorkOrder com state
+// machine basica) + versao intermediaria (Technician, Parts, SLA, Comments,
+// WorkOrderStatusHistory, RBAC completo -- ver PLANNING.md secao 12).
+// Ainda faltam: Attachments e AuditLog (versao avancada).
 
 generator client {
   provider = "prisma-client-js"
@@ -40,10 +41,12 @@ model Company {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  users      User[]
-  customers  Customer[]
-  equipment  Equipment[]
-  workOrders WorkOrder[]
+  users       User[]
+  customers   Customer[]
+  equipment   Equipment[]
+  workOrders  WorkOrder[]
+  technicians Technician[]
+  parts       Part[]
 }
 
 model User {
@@ -57,8 +60,11 @@ model User {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  refreshTokens      RefreshToken[]
-  createdWorkOrders  WorkOrder[]
+  refreshTokens     RefreshToken[]
+  createdWorkOrders WorkOrder[]
+  technician        Technician?
+  comments          Comment[]
+  statusChanges     WorkOrderStatusHistory[]
 }
 
 model RefreshToken {
@@ -102,23 +108,92 @@ model Equipment {
   workOrders WorkOrder[]
 }
 
+model Technician {
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id])
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id])
+  specialty  String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  workOrders WorkOrder[]
+}
+
+model Part {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  name      String
+  sku       String
+  unitPrice Decimal
+  stockQty  Int?     @default(0)
+  createdAt DateTime @default(now())
+
+  workOrderParts WorkOrderPart[]
+}
+
 model WorkOrder {
-  id          String          @id @default(cuid())
-  companyId   String
-  company     Company         @relation(fields: [companyId], references: [id])
-  customerId  String
-  customer    Customer        @relation(fields: [customerId], references: [id])
-  equipmentId String
-  equipment   Equipment       @relation(fields: [equipmentId], references: [id])
-  priority    Priority
-  status      WorkOrderStatus @default(ABERTA)
-  description String
-  openedAt    DateTime        @default(now())
-  startedAt   DateTime?
-  resolvedAt  DateTime?
-  closedAt    DateTime?
+  id           String          @id @default(cuid())
+  companyId    String
+  company      Company         @relation(fields: [companyId], references: [id])
+  customerId   String
+  customer     Customer        @relation(fields: [customerId], references: [id])
+  equipmentId  String
+  equipment    Equipment       @relation(fields: [equipmentId], references: [id])
+  technicianId String?
+  technician   Technician?     @relation(fields: [technicianId], references: [id])
+  priority     Priority
+  status       WorkOrderStatus @default(ABERTA)
+  description  String
+  slaDueAt     DateTime
+  openedAt     DateTime        @default(now())
+  startedAt    DateTime?
+  resolvedAt   DateTime?
+  closedAt     DateTime?
+  laborHours   Decimal?        @default(0)
+  laborCost    Decimal?        @default(0)
 
   createdByUserId String
   createdByUser   User     @relation(fields: [createdByUserId], references: [id])
   createdAt       DateTime @default(now())
+
+  parts         WorkOrderPart[]
+  comments      Comment[]
+  statusHistory WorkOrderStatusHistory[]
+}
+
+model WorkOrderPart {
+  id             String   @id @default(cuid())
+  workOrderId    String
+  workOrder      WorkOrder @relation(fields: [workOrderId], references: [id])
+  partId         String
+  part           Part     @relation(fields: [partId], references: [id])
+  quantity       Int
+  unitPriceAtUse Decimal // congelado no momento do uso -- nao segue o preco atual do catalogo
+  createdAt      DateTime @default(now())
+}
+
+model Comment {
+  id          String   @id @default(cuid())
+  workOrderId String
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id])
+  authorUserId String
+  author       User     @relation(fields: [authorUserId], references: [id])
+  body         String
+  isInternal   Boolean  @default(true)
+  createdAt    DateTime @default(now())
+}
+
+model WorkOrderStatusHistory {
+  id              String           @id @default(cuid())
+  workOrderId     String
+  workOrder       WorkOrder        @relation(fields: [workOrderId], references: [id])
+  fromStatus      WorkOrderStatus?
+  toStatus        WorkOrderStatus
+  changedByUserId String
+  changedByUser   User             @relation(fields: [changedByUserId], references: [id])
+  note            String?
+  changedAt       DateTime         @default(now())
 }

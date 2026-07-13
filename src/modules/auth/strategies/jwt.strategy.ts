@@ -38,11 +38,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Usuario invalido ou inativo.');
     }
 
+    const technician = await this.prisma.technician.findUnique({
+      where: { userId: user.id },
+      select: { id: true },
+    });
+
     return {
       id: user.id,
       email: user.email,
       role: user.role,
       companyId: user.companyId,
+      technicianId: technician?.id ?? null,
     };
   }
 }

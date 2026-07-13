@@ -6,4 +6,6 @@ export type AuthenticatedUser = {
   email: string;
   role: Role;
   companyId: string | null;
+  /** Preenchido apenas quando o usuario tem um perfil de Technician vinculado. */
+  technicianId: string | null;
 };

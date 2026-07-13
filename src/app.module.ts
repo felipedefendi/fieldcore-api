@@ -14,6 +14,8 @@ import { UsersModule } from './modules/users/users.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { EquipmentModule } from './modules/equipment/equipment.module';
 import { WorkOrdersModule } from './modules/work-orders/work-orders.module';
+import { TechniciansModule } from './modules/technicians/technicians.module';
+import { PartsModule } from './modules/parts/parts.module';
 
 @Module({
   imports: [
@@ -34,6 +36,8 @@ import { WorkOrdersModule } from './modules/work-orders/work-orders.module';
     CustomersModule,
     EquipmentModule,
     WorkOrdersModule,
+    TechniciansModule,
+    PartsModule,
   ],
   controllers: [AppController],
   providers: [

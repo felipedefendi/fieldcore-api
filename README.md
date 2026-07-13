@@ -4,20 +4,24 @@ API de gestão de ordens de serviço, manutenção e técnicos em campo — para
 manutenção industrial, elétrica, climatização, TI ou predial que ainda coordenam chamados
 por planilha/WhatsApp.
 
-🔗 **Swagger:** `/api/docs` (após rodar localmente) · **Deploy:** _(adicionar após o deploy)_
+🔗 **Swagger:** `/api/docs` · **Deploy:** https://fieldcore-api.onrender.com/api/docs
 
 ## 📋 O problema que resolve
 
 Empresas de serviço técnico de campo perdem visibilidade de SLA, não rastreiam custo de peças
 por ordem de serviço e não têm histórico de manutenção por equipamento. A FieldCore API
-centraliza clientes → equipamentos → ordens de serviço → status, com:
+centraliza clientes → equipamentos → ordens de serviço → técnicos → peças → custo, com:
 
-- **Isolamento multi-tenant real** — cada empresa só acessa seus próprios dados (testado: uma
-  empresa não vê nem por ID direto os recursos de outra — retorna `404`, não `403`, para não
-  nem revelar que o recurso existe)
+- **Isolamento multi-tenant real** — cada empresa só acessa seus próprios dados (testado com
+  integração automatizada: uma empresa não vê nem por ID direto os recursos de outra — retorna
+  `404`, não `403`, para não nem revelar que o recurso existe)
 - **Máquina de estados** para o ciclo de vida da ordem de serviço (transições inválidas são
   rejeitadas com `422`)
-- **RBAC por papel** (Super Admin / Admin / Gestor / Técnico / Cliente externo)
+- **RBAC por papel** (Super Admin / Admin / Gestor / Técnico / Cliente externo) — técnico só
+  acessa as ordens de serviço atribuídas a ele
+- **SLA calculado por prioridade** (com flag de estourado) e **custo total** (peças com preço
+  congelado no momento do uso + mão de obra), ambos como funções puras e testadas
+- **Histórico de status** registrado automaticamente a cada mudança
 - **JWT com access + refresh token**, com rotação e bloqueio de reuso
 
 O planejamento técnico completo está em [`PLANNING.md`](./PLANNING.md).
@@ -29,7 +33,7 @@ O planejamento técnico completo está em [`PLANNING.md`](./PLANNING.md).
 - **JWT** (`@nestjs/jwt` + `passport-jwt`) — access token curto + refresh token rotacionado
 - **Docker + Docker Compose** — Postgres, Adminer e a própria API
 - **Swagger/OpenAPI** — documentação interativa em `/api/docs`
-- **Jest** — testes unitários da lógica de negócio (máquina de estados, parsing de datas)
+- **Jest** — testes unitários (lógica de negócio) e de integração (e2e, contra Postgres real)
 - **Zod** — validação de variáveis de ambiente no boot
 - **ESLint + Prettier**
 
@@ -41,15 +45,24 @@ erDiagram
     Company ||--o{ Customer : possui
     Company ||--o{ Equipment : possui
     Company ||--o{ WorkOrder : possui
+    Company ||--o{ Technician : possui
+    Company ||--o{ Part : possui
     Customer ||--o{ Equipment : tem
     Customer ||--o{ WorkOrder : solicita
     Equipment ||--o{ WorkOrder : "historico de"
+    Technician ||--o{ WorkOrder : atende
+    WorkOrder ||--o{ WorkOrderPart : usa
+    WorkOrder ||--o{ Comment : recebe
+    WorkOrder ||--o{ WorkOrderStatusHistory : registra
+    Part ||--o{ WorkOrderPart : "usada em"
     User ||--o{ RefreshToken : possui
     User ||--o{ WorkOrder : cria
 ```
 
 Toda entidade carrega `companyId`; nenhuma query confia em `companyId` vindo do client — ele
-sempre vem do JWT do usuário autenticado (`@CurrentUser()` + `requireCompanyId()`).
+sempre vem do JWT do usuário autenticado (`@CurrentUser()` + `requireCompanyId()`). SLA e custo
+total nunca são armazenados: são sempre recalculados na resposta a partir de funções puras
+(`sla.ts`, `cost.ts`), evitando que o dado fique desatualizado.
 
 ## 🚀 Como rodar localmente
 
@@ -68,7 +81,7 @@ A API sobe em `http://localhost:3000`, com Swagger em `http://localhost:3000/api
 Adminer (interface do Postgres) em `http://localhost:8080`.
 
 > Alternativa: `docker compose up` sobe **tudo** (Postgres + Adminer + a própria API
-> containerizada).
+> containerizada) — o próprio container roda `prisma migrate deploy` antes de iniciar.
 
 ### Usuários de teste (criados pelo `npm run seed`)
 
@@ -76,6 +89,7 @@ Adminer (interface do Postgres) em `http://localhost:8080`.
 |---|---|---|
 | SUPER_ADMIN | `super@fieldcore.dev` | `Senha123!` |
 | ADMIN (empresa demo) | `admin@fieldcore.dev` | `Senha123!` |
+| TECNICO (empresa demo) | `tecnico@fieldcore.dev` | `Senha123!` |
 
 ## 🔑 Variáveis de ambiente
 
@@ -96,6 +110,7 @@ npm run start:dev     # dev com hot-reload
 npm run build          # build de producao
 npm run lint            # eslint --fix
 npm test                 # testes unitarios (jest)
+npm run test:e2e          # testes de integracao (contra o Postgres real)
 npx prisma studio         # explorar o banco visualmente
 npx prisma migrate dev     # criar/aplicar uma nova migration
 npm run seed                # popular dados de demonstracao
@@ -118,7 +133,15 @@ curl -X POST http://localhost:3000/work-orders \
   -d '{"customerId":"...","equipmentId":"...","priority":"ALTA","description":"Ar-condicionado nao gela"}'
 ```
 
-**Mudar o status (a maquina de estados valida a transicao):**
+**Atribuir um técnico:**
+```bash
+curl -X PATCH http://localhost:3000/work-orders/<id>/assign \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{"technicianId":"..."}'
+```
+
+**Mudar o status (a máquina de estados valida a transição):**
 ```bash
 curl -X PATCH http://localhost:3000/work-orders/<id>/status \
   -H "Authorization: Bearer <accessToken>" \
@@ -126,23 +149,36 @@ curl -X PATCH http://localhost:3000/work-orders/<id>/status \
   -d '{"status":"EM_ANDAMENTO"}'
 ```
 
+**Registrar peça usada (preço congelado no momento do uso):**
+```bash
+curl -X POST http://localhost:3000/work-orders/<id>/parts \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{"partId":"...","quantity":2}'
+```
+
 ## 🗺️ Roadmap
 
 - [x] **MVP** — Auth (login/refresh/logout), Company, User+Role, Customer, Equipment, WorkOrder
-      com maquina de estados basica, Docker Compose, Swagger, testes unitarios
-- [ ] **Intermediaria** — Technician + atribuicao de OS, Parts + calculo de custo, SLA
-      (calculo + flag de estourado), Comments, WorkOrderStatusHistory
-- [ ] **Avancada** — Attachments, AuditLog automatico, Reports (SLA/custos/performance),
-      paginacao/filtros em todas as listas, CI no GitHub Actions
-- [ ] **Futuro** — Portal do cliente externo, notificacoes de SLA, exportacao CSV/PDF
+      com máquina de estados básica, Docker Compose, Swagger, testes unitários
+- [x] **Intermediária** — Technician + atribuição de OS, Parts + cálculo de custo, SLA
+      (cálculo + flag de estourado), Comments, WorkOrderStatusHistory, RBAC completo
+      (escopo do técnico) e testes de integração cobrindo isolamento multi-tenant
+- [ ] **Avançada** — Attachments, AuditLog automático, Reports (SLA/custos/performance),
+      paginação/filtros em todas as listas, CI no GitHub Actions
+- [ ] **Futuro** — Portal do cliente externo, notificações de SLA, exportação CSV/PDF
 
 Planejamento completo de cada fase em [`PLANNING.md`](./PLANNING.md).
 
 ## ✅ Qualidade
 
-15 testes unitarios cobrindo a maquina de estados da OS, parsing de duracoes JWT e as
-funcoes de dominio. Isolamento multi-tenant e RBAC validados manualmente ponta a ponta
-(login, CRUD, transicoes de status validas/invalidas, cross-tenant isolation).
+27 testes unitários (máquina de estados, SLA, custo, parsing de duração JWT) + 12 testes de
+integração end-to-end rodando contra um Postgres real, provando na prática:
+
+- Isolamento multi-tenant (uma empresa nunca vê dado de outra, nem por ID direto)
+- RBAC — técnico só acessa as próprias ordens de serviço atribuídas
+- Cálculo correto de SLA (por prioridade) e de custo total (peças + mão de obra)
+- Transições de status inválidas rejeitadas, histórico registrado automaticamente
 
 ---
 
