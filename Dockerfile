@@ -16,4 +16,4 @@ COPY prisma ./prisma
 RUN npm ci --omit=dev && npx prisma generate
 COPY --from=build /app/dist ./dist
 EXPOSE 3000
-CMD ["node", "dist/main.js"]
+CMD npx prisma migrate deploy && node dist/main.js
