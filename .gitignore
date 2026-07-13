@@ -1,0 +1,27 @@
+# dependencies
+/node_modules
+
+# build
+/dist
+/coverage
+
+# env
+.env
+.env.local
+
+# prisma
+/prisma/migrations/dev-*
+
+# logs
+npm-debug.log*
+*.log
+
+# editor/tooling (nunca versionar)
+/.claude
+CLAUDE.md
+AGENTS.md
+.vscode/*
+!.vscode/extensions.json
+
+# OS
+.DS_Store

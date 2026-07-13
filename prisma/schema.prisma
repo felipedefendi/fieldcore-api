@@ -1,0 +1,124 @@
+// Escopo do MVP (ver PLANNING.md, secao 12): Company, User+Role, Customer, Equipment,
+// WorkOrder com state machine basica (sem Technician, Parts, SLA, Comments, Attachments,
+// AuditLog ainda -- entram na versao intermediaria/avancada).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  GESTOR
+  TECNICO
+  CLIENTE_EXTERNO
+}
+
+enum Priority {
+  BAIXA
+  MEDIA
+  ALTA
+  URGENTE
+}
+
+enum WorkOrderStatus {
+  ABERTA
+  EM_ANDAMENTO
+  CONCLUIDA
+  CANCELADA
+}
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  document  String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  users      User[]
+  customers  Customer[]
+  equipment  Equipment[]
+  workOrders WorkOrder[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  companyId    String? // null apenas para SUPER_ADMIN
+  company      Company? @relation(fields: [companyId], references: [id])
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  refreshTokens      RefreshToken[]
+  createdWorkOrders  WorkOrder[]
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  name      String
+  document  String
+  email     String?
+  phone     String?
+  address   String?
+  createdAt DateTime @default(now())
+
+  equipment  Equipment[]
+  workOrders WorkOrder[]
+}
+
+model Equipment {
+  id           String    @id @default(cuid())
+  companyId    String
+  company      Company   @relation(fields: [companyId], references: [id])
+  customerId   String
+  customer     Customer  @relation(fields: [customerId], references: [id])
+  name         String
+  type         String
+  brand        String?
+  serialNumber String?
+  installedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  workOrders WorkOrder[]
+}
+
+model WorkOrder {
+  id          String          @id @default(cuid())
+  companyId   String
+  company     Company         @relation(fields: [companyId], references: [id])
+  customerId  String
+  customer    Customer        @relation(fields: [customerId], references: [id])
+  equipmentId String
+  equipment   Equipment       @relation(fields: [equipmentId], references: [id])
+  priority    Priority
+  status      WorkOrderStatus @default(ABERTA)
+  description String
+  openedAt    DateTime        @default(now())
+  startedAt   DateTime?
+  resolvedAt  DateTime?
+  closedAt    DateTime?
+
+  createdByUserId String
+  createdByUser   User     @relation(fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+}
